@@ -185,10 +185,10 @@ class App(tk.Tk):
             body, text="▶  Renombrar y Organizar PDFs",
             command=self._iniciar_proceso,
             state="disabled",
-            bg="#1a56a0", fg="white",
+            bg="#e8a000", fg="white",
             font=("Helvetica", 12, "bold"),
             relief="flat", pady=10,
-            activebackground="#154480", activeforeground="white",
+            activebackground="#c78800", activeforeground="white",
             cursor="hand2"
         )
         self._btn.pack(fill="x", pady=(0, 14))
