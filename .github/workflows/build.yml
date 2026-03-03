@@ -1,0 +1,99 @@
+name: Compilar App (Mac + Windows)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: |
+          pip install pdfplumber pyinstaller
+
+      - name: Compilar app con PyInstaller
+        run: |
+          pyinstaller \
+            --onefile \
+            --windowed \
+            --name "RenombradorPDFs_SS" \
+            --hidden-import pdfplumber \
+            --hidden-import pdfminer \
+            --hidden-import pdfminer.high_level \
+            --hidden-import pdfminer.layout \
+            --hidden-import pdfminer.pdfpage \
+            --hidden-import pdfminer.converter \
+            --hidden-import pdfminer.pdfdocument \
+            --hidden-import pdfminer.pdfinterp \
+            --hidden-import pdfminer.pdfdevice \
+            --hidden-import pypdfium2 \
+            renombrador_ss.py
+
+      - name: Crear dmg instalador
+        run: |
+          mkdir -p dmg_content
+          cp -r dist/RenombradorPDFs_SS.app dmg_content/
+          ln -s /Applications dmg_content/Applications
+          hdiutil create \
+            -volname "Renombrador PDFs SS" \
+            -srcfolder dmg_content \
+            -ov \
+            -format UDZO \
+            RenombradorPDFs_SS_Mac.dmg
+
+      - name: Subir dmg como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: RenombradorPDFs_SS_Mac
+          path: RenombradorPDFs_SS_Mac.dmg
+          retention-days: 30
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: |
+          pip install pdfplumber pyinstaller
+
+      - name: Compilar exe con PyInstaller
+        run: |
+          pyinstaller `
+            --onefile `
+            --windowed `
+            --name "RenombradorPDFs_SS" `
+            --hidden-import pdfplumber `
+            --hidden-import pdfminer `
+            --hidden-import pdfminer.high_level `
+            --hidden-import pdfminer.layout `
+            --hidden-import pdfminer.pdfpage `
+            --hidden-import pdfminer.converter `
+            --hidden-import pdfminer.pdfdocument `
+            --hidden-import pdfminer.pdfinterp `
+            --hidden-import pdfminer.pdfdevice `
+            --hidden-import pypdfium2 `
+            renombrador_ss.py
+
+      - name: Subir exe como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: RenombradorPDFs_SS_Windows
+          path: dist/RenombradorPDFs_SS.exe
+          retention-days: 30
