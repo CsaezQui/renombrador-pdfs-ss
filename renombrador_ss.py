@@ -2,8 +2,16 @@
 Renombrador de PDFs - Seguridad Social
 =======================================
 Detecta si el PDF es RLC (Recibo de Liquidación de Cotizaciones)
-o RNT (Relación Nominal de Trabajadores), extrae la Razón Social
-y renombra el archivo con el formato: RazonSocial_RLC.pdf / RazonSocial_RNT.pdf
+o RNT (Relación Nominal de Trabajadores), extrae la Razón Social,
+renombra el archivo con el formato: RazonSocial_RLC.pdf / RazonSocial_RNT.pdf
+y lo mueve a una carpeta con el nombre del cliente.
+
+Estructura resultante:
+  📁 EMPRESA SL/
+      EMPRESA SL_RLC.pdf
+      EMPRESA SL_RNT.pdf
+  📁 OTRA EMPRESA SA/
+      OTRA EMPRESA SA_RLC.pdf
 
 Compatible con macOS y Windows.
 Requiere: pdfplumber
@@ -12,6 +20,7 @@ Requiere: pdfplumber
 import os
 import re
 import sys
+import shutil
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -19,7 +28,6 @@ from tkinter import ttk, filedialog, messagebox
 try:
     import pdfplumber
 except ImportError:
-    # Si no está instalado, mostrar mensaje de error claro
     root = tk.Tk()
     root.withdraw()
     messagebox.showerror(
@@ -83,7 +91,7 @@ def detectar_razon_social(texto):
         m = re.search(patron, texto, re.IGNORECASE)
         if m:
             nombre = m.group(1).strip()
-            # Limpiar caracteres no válidos para nombre de archivo
+            # Limpiar caracteres no válidos para nombre de archivo/carpeta
             nombre = re.sub(r'[\\/:*?"<>|]', "_", nombre)
             nombre = nombre.strip()
             if nombre:
@@ -113,9 +121,7 @@ class App(tk.Tk):
         self.title("Renombrador de PDFs – Seguridad Social")
         self.resizable(False, False)
         self.configure(bg="#f0f2f5")
-
-        # En macOS, usar un tamaño más compacto
-        self.geometry("680x560")
+        self.geometry("680x600")
 
         self._carpeta = tk.StringVar()
         self._build_ui()
@@ -130,7 +136,7 @@ class App(tk.Tk):
             bg="#1a56a0", fg="white"
         ).pack()
         tk.Label(
-            header, text="Seguridad Social  ·  RLC y RNT  ·  Extrae Razón Social automáticamente",
+            header, text="Seguridad Social  ·  RLC y RNT  ·  Organiza por cliente automáticamente",
             font=("Helvetica", 10),
             bg="#1a56a0", fg="#c8d9f0"
         ).pack()
@@ -147,7 +153,7 @@ class App(tk.Tk):
         ).pack(fill="x", pady=(0, 4))
 
         row = tk.Frame(body, bg="#f0f2f5")
-        row.pack(fill="x", pady=(0, 16))
+        row.pack(fill="x", pady=(0, 10))
 
         self._entry = tk.Entry(
             row, textvariable=self._carpeta,
@@ -163,9 +169,20 @@ class App(tk.Tk):
             font=("Helvetica", 10), padx=10
         ).pack(side="left", padx=(6, 0), ipady=5)
 
+        # Opción: crear subcarpetas
+        self._crear_carpetas = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            body,
+            text="Crear carpeta por cliente y mover los documentos dentro",
+            variable=self._crear_carpetas,
+            font=("Helvetica", 10),
+            bg="#f0f2f5", anchor="w",
+            activebackground="#f0f2f5"
+        ).pack(fill="x", pady=(0, 14))
+
         # Botón principal
         self._btn = tk.Button(
-            body, text="▶  Renombrar PDFs",
+            body, text="▶  Renombrar y Organizar PDFs",
             command=self._iniciar_proceso,
             state="disabled",
             bg="#1a56a0", fg="white",
@@ -208,10 +225,11 @@ class App(tk.Tk):
         self._log.config(yscrollcommand=sb.set)
 
         # Colores del log
-        self._log.tag_config("ok",    foreground="#1a7a3c")
-        self._log.tag_config("skip",  foreground="#7a6a1a")
-        self._log.tag_config("error", foreground="#b22222")
-        self._log.tag_config("info",  foreground="#444444")
+        self._log.tag_config("ok",      foreground="#1a7a3c")
+        self._log.tag_config("carpeta", foreground="#1a56a0")
+        self._log.tag_config("skip",    foreground="#7a6a1a")
+        self._log.tag_config("error",   foreground="#b22222")
+        self._log.tag_config("info",    foreground="#444444")
 
     # ── Acciones ──────────────────────────────────────────────────────────────
 
@@ -239,13 +257,19 @@ class App(tk.Tk):
         self._btn.config(state="disabled")
         self._limpiar_log()
         self._prog["value"] = 0
-        # Ejecutar en hilo separado para no bloquear la UI
         t = threading.Thread(target=self._procesar, daemon=True)
         t.start()
 
     def _procesar(self):
-        carpeta = self._carpeta.get()
-        pdfs = [f for f in os.listdir(carpeta) if f.lower().endswith(".pdf")]
+        carpeta_raiz = self._carpeta.get()
+        crear_carpetas = self._crear_carpetas.get()
+
+        # Solo PDFs en la raíz (no en subcarpetas ya creadas)
+        pdfs = [
+            f for f in os.listdir(carpeta_raiz)
+            if f.lower().endswith(".pdf") and
+               os.path.isfile(os.path.join(carpeta_raiz, f))
+        ]
 
         if not pdfs:
             self._log_msg("No se encontraron archivos PDF en la carpeta.", "skip")
@@ -254,9 +278,10 @@ class App(tk.Tk):
 
         total = len(pdfs)
         ok = skip = errores = 0
+        carpetas_creadas = set()
 
         for i, nombre_archivo in enumerate(pdfs, 1):
-            ruta = os.path.join(carpeta, nombre_archivo)
+            ruta_origen = os.path.join(carpeta_raiz, nombre_archivo)
             self._prog_label.config(text=f"Procesando {i} de {total}…")
             self._prog["value"] = (i / total) * 100
             self.update_idletasks()
@@ -264,31 +289,46 @@ class App(tk.Tk):
             self._log_msg(f"Procesando: {nombre_archivo}", "info")
 
             try:
-                texto = extraer_texto_pdf(ruta)
+                texto = extraer_texto_pdf(ruta_origen)
                 tipo = detectar_tipo(texto)
                 razon = detectar_razon_social(texto)
 
                 if not tipo:
-                    self._log_msg(f"  ⚠ No se detectó tipo (RLC/RNT) → omitido", "skip")
+                    self._log_msg("  ⚠ No se detectó tipo (RLC/RNT) → omitido", "skip")
                     skip += 1
                     continue
 
                 if not razon:
-                    self._log_msg(f"  ⚠ No se encontró Razón Social → omitido", "skip")
+                    self._log_msg("  ⚠ No se encontró Razón Social → omitido", "skip")
                     skip += 1
                     continue
 
+                # Determinar carpeta de destino
+                if crear_carpetas:
+                    carpeta_destino = os.path.join(carpeta_raiz, razon)
+                    if not os.path.exists(carpeta_destino):
+                        os.makedirs(carpeta_destino)
+                        carpetas_creadas.add(razon)
+                        self._log_msg(f"  📁 Carpeta creada: {razon}", "carpeta")
+                else:
+                    carpeta_destino = carpeta_raiz
+
+                # Calcular nuevo nombre
                 nuevo_base = f"{razon}_{tipo}"
-                nuevo_nombre = nombre_unico(carpeta, nuevo_base, ".pdf")
+                nuevo_nombre = nombre_unico(carpeta_destino, nuevo_base, ".pdf")
+                ruta_destino = os.path.join(carpeta_destino, nuevo_nombre)
 
-                if nuevo_nombre == nombre_archivo:
-                    self._log_msg(f"  ✓ Ya tiene el nombre correcto → sin cambios", "skip")
-                    skip += 1
-                    continue
+                # Mover y renombrar
+                shutil.move(ruta_origen, ruta_destino)
 
-                nueva_ruta = os.path.join(carpeta, nuevo_nombre)
-                os.rename(ruta, nueva_ruta)
-                self._log_msg(f"  ✓ {nombre_archivo}  →  {nuevo_nombre}", "ok")
+                if crear_carpetas:
+                    self._log_msg(
+                        f"  ✓ {nombre_archivo}  →  {razon}/{nuevo_nombre}", "ok"
+                    )
+                else:
+                    self._log_msg(
+                        f"  ✓ {nombre_archivo}  →  {nuevo_nombre}", "ok"
+                    )
                 ok += 1
 
             except Exception as e:
@@ -297,9 +337,15 @@ class App(tk.Tk):
 
         self._prog["value"] = 100
         self._prog_label.config(text="Proceso completado.")
+
+        resumen_carpetas = (
+            f"  📁 Carpetas creadas: {len(carpetas_creadas)}\n"
+            if crear_carpetas else ""
+        )
         self._log_msg(
             f"\n{'─'*50}\n"
-            f"  ✓ Renombrados: {ok}   ⚠ Omitidos: {skip}   ✗ Errores: {errores}\n"
+            f"  ✓ Procesados: {ok}   ⚠ Omitidos: {skip}   ✗ Errores: {errores}\n"
+            f"{resumen_carpetas}"
             f"{'─'*50}",
             "info"
         )
