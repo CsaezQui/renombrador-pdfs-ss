@@ -65,15 +65,26 @@ PATRONES_RAZON_RLC = [
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PATRONES  –  Notificaciones TGSS
+# PATRONES  –  Notificaciones TGSS  (cubre todos los formatos conocidos)
 # ─────────────────────────────────────────────────────────────────────────────
+# Los patrones se aplican en orden de prioridad (más específico primero).
+# Cada uno captura el nombre/razón social en el grupo 1.
 PATRONES_NOMBRE_NOTIF = [
-    # "Apellidos y Nombre/R.Social: NOMBRE APELLIDOS"
-    r"Apellidos\s+y\s+Nombre/R\.?Social:\s+([^\n]+)",
-    # "NIF/CIF: XXXX  Apellidos y Nombre/R.Social: NOMBRE"  (en la misma línea)
-    r"NIF/CIF:[^\n]+?Apellidos\s+y\s+Nombre/R\.?Social:\s+([^\n]+)",
-    # Fallback: "R.Social: NOMBRE"
-    r"R\.?Social:\s+([^\n]+)",
+    # Doc 3, 4: "Apellidos y nombre/R.Social: NOMBRE"  (con o sin espacio, mayúsculas/minúsculas)
+    r"Apellidos\s+y\s+[Nn]ombre/R\.?[Ss]ocial:\s+([^\n]+)",
+    # Doc 3, 4 (misma línea con NIF): "NIF/CIF: X  Apellidos y nombre/R.Social: NOMBRE"
+    r"NIF/CIF:[^\n]+?Apellidos\s+y\s+[Nn]ombre/R\.?[Ss]ocial:\s+([^\n]+)",
+    # Doc 7: "RAZÓN SOCIAL: NOMBRE" al inicio de línea
+    r"^RAZ[ÓO]N\s+SOCIAL:\s+(.+)",
+    # Doc 5: "Nombre o Razón Social" seguido de línea con el nombre
+    r"Nombre\s+o\s+Raz[oó]n\s+Social\s*\n([^\n]+)",
+    # Doc 1: "Régimen/C.C.C./Razón social\n0111 / 28 XXXXXX / NOMBRE"
+    r"R[eé]gimen/C\.C\.C\./Raz[oó]n\s+social\s*\n[^\n]+/\s*([^\n]+)",
+    # Doc 6: "Hola, NOMBRE:" al inicio del documento
+    r"^Hola,\s+([^:]+):",
+    # Genérico: "R.Social: NOMBRE" o "Razón Social: NOMBRE"
+    r"R\.?[Ss]ocial:\s+([^\n]+)",
+    r"Raz[oó]n\s+[Ss]ocial[:\s]+([A-ZÁÉÍÓÚÜÑ][^\n]+)",
 ]
 
 
@@ -158,7 +169,7 @@ class PanelCarpeta(tk.Frame):
         self._origen = tk.StringVar()
         self._destino = tk.StringVar()
         self._modo_destino = tk.StringVar(value="origen")  # "origen" | "nueva"
-        self._crear_subcarpetas = tk.BooleanVar(value=True)
+        self._crear_subcarpetas = tk.BooleanVar(value=False)
         self._build()
 
     def _build(self):
